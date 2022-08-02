@@ -1,5 +1,17 @@
-data <- read.csv("PRJNA435914_Korean_Male_Count.csv", header = T, row.names = 1)
-meta <- read.csv("PRJNA435914_Korean_Male.csv", row.names = 1)
+## Packages##
+library("DESeq2")
+library(dplyr)
+library('biomaRt')
+library(EnhancedVolcano)
+library(pheatmap)
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+
+## Uploading Data ##
+
+data <- read.csv("Count_data.csv", header = T, row.names = 1)
+meta <- read.csv("Meta_data.csv", row.names = 1)
 all(colnames(data) %in% rownames(meta))
 all(colnames(data) == rownames(meta))
 library("DESeq2")
