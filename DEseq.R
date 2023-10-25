@@ -2,11 +2,12 @@
 library("DESeq2")
 library(dplyr)
 library('biomaRt')
-library(EnhancedVolcano)
 library(pheatmap)
 library(clusterProfiler)
 library(enrichplot)
 library(ggplot2)
+library(forcats)
+library("ggrepel")
 
 ## Uploading Data ##
 
@@ -39,88 +40,112 @@ res05 <- results(dds, alpha=0.05)
 summary(res05)
 sum(res05$padj < 0.05, na.rm=TRUE)
 df <- subset(res, res$pvalue <= 0.05 & (res$log2FoldChange > 2 | res$log2FoldChange < -2))
-write.csv(df, "PRJNA435914_Korean_Male_UpandDown.csv")
+write.csv(df, "Data_UpandDown.csv")
 df <- subset(res, res$pvalue <= 0.05 & res$log2FoldChange > 2)
-write.csv(df, "PRJNA435914_Korean_Male_Upregulated.csv")
+write.csv(df, "Data_Upregulated.csv")
 df <- subset(res, res$pvalue <= 0.05 & res$log2FoldChange < -2)
-write.csv(df, "PRJNA435914_Korean_Male_Downregulated.csv")
+write.csv(df, "Data_Downregulated.csv")
 
 ### normalization ###
 
 vsd <- vst(dds, blind=FALSE)
 rld <- rlog(dds, blind=FALSE)
 head(assay(vsd), 10)
-write.csv(assay(vsd), "PRJNA435914_Korean_Male_vst_norm.csv")
-write.csv(assay(rld), "PRJNA435914_Korean_Male_rlog_norm.csv")
+write.csv(assay(vsd), "Data_vst_norm.csv")
+write.csv(assay(rld), "Data_rlog_norm.csv")
 
 ## to extract count data ##
 
 library(dplyr)
-DGE.results.sorted <- read.csv("PRJNA435914_Korean_Male_UpandDown.csv", row.names = 1)
+DGE.results.sorted <- read.csv("Data_UpandDown.csv", row.names = 1)
 DGEgenes <- rownames(subset(DGE.results.sorted, padj < 0.05))
 head(DGE.results.sorted)
-normalizeddata <- read.csv("PRJNA435914_Korean_Male_vst_norm.csv", row.names = 1)
+normalizeddata <- read.csv("Data_vst_norm.csv", row.names = 1)
 Visualization <- normalizeddata[DGEgenes,] %>% data.frame()
-write.csv(Visualization, "PRJNA435914_Korean_Male_UpandDown_Visualization.csv")
+write.csv(Visualization, "Data_UpandDown_Visualization.csv")
 
 ### Finding Gene Symbol ##
 
 library('biomaRt')
 mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
-df <- read.csv("PRJNA435914_Korean_Male_UpandDown.csv")
+df <- read.csv("Data_UpandDown.csv")
 head(df)
 genes <- df$ensembl_gene_id
 G_list <- getBM(filters= "ensembl_gene_id", attributes= c("ensembl_gene_id","hgnc_symbol"), values=genes, mart= mart)
 G_list
 A <- merge(df, G_list, by = "ensembl_gene_id")
-write.csv(A, "PRJNA435914_Korean_Male_UpandDown_withsymbol.csv")
+write.csv(A, "Data_UpandDown_withsymbol.csv")
 
 ### Volcano Plot ####
 library(forcats)
-data <- read.csv("DEGs_UpandDown1.csv", header = TRUE, row.names = 1)
+library("ggrepel")
+data <- read.csv("Data_UpandDown.csv", header = TRUE, row.names = 1)
 data <- data %>%
-  mutate(gene_type = case_when(log2FoldChange >= 1 & pvalue <= 0.05 ~ "up",
+  mutate(Expression = case_when(log2FoldChange >= 1 & pvalue <= 0.05 ~ "up",
                                log2FoldChange <= -1 & pvalue <= 0.05 ~ "down",
                                TRUE ~ "ns"))   
 data %>%
-  count(gene_type) %>%
+  count(Expression) %>%
   knitr::kable()
 
 data <- data %>%
-  mutate(gene_type = fct_relevel(gene_type, "up", "down")) 
+  mutate(Expression = fct_relevel(Expression, "up", "down")) 
 
 data %>%
-  distinct(gene_type) %>%
+  distinct(Expression) %>%
   pull()
 
-cols <- c("up" = "red", "down" = "green", "ns" = "grey") 
-sizes <- c("up" = 2, "down" = 2, "ns" = 1) 
+sig_il_genes <- data %>%
+  filter(symbol %in% c("CP",
+                               "CHRNA3",
+                               "TGM1",
+                               "MMP11",
+                               "RUNDC3A",
+                               "CASQ2",
+                               "CSTA",
+                               "CNN1",
+                               "H19",
+                               "IDO1",
+                               "ACTG2",
+                               "IGF2",
+                               "SYNPO2",
+                               "DES"
+  ))
+
+cols <- c("up" = "#bb0c00", "down" = "green", "ns" = "grey") 
+sizes <- c("up" = 3, "down" = 3, "ns" = 1) 
 alphas <- c("up" = 1, "down" = 1, "ns" = 0.5)
 
 data %>%
   ggplot(aes(x = log2FoldChange,
              y = -log10(pvalue),
-             fill = gene_type,
-             size = gene_type,
-             alpha = gene_type)) + 
-  geom_point(shape = 21, # Specify shape and colour as fixed local parameters    
-             colour = "grey") + 
-  geom_hline(yintercept = -log10(0.05),
+             fill = Expression,
+             size = Expression,
+             alpha = Expression)) + 
+  geom_point(shape = 21, colour = "grey") + 
+  #geom_hline(yintercept = -log10(0.05),
              #linetype = "dashed") + 
-  geom_vline(xintercept = c(log2(0.5), log2(2)),
+  #geom_vline(xintercept = c(log2(0.5), log2(2)),
              #linetype = "dashed") +
-  scale_fill_manual(values = cols) + # Modify point colour
-  scale_size_manual(values = sizes) + # Modify point size
-  scale_alpha_manual(values = alphas) + # Modify point transparency
+  geom_text_repel(data = sig_il_genes,  aes(label = symbol),
+                  size=3, nudge_x = 0.01, fontface='bold') +
+  scale_fill_manual(values = cols) + 
+  scale_size_manual(values = sizes) +
+  scale_alpha_manual(values = alphas) + 
   scale_x_continuous(breaks = c(seq(-5, 5, 1)),  
-                     limits = c(-3, 3))  
+                     limits = c(-2, 2)) + labs(title = "Volcano plot") + theme_bw() + 
+  theme(axis.line = element_line(colour = "black"),
+        panel.border = element_blank(),    
+        panel.grid.minor = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.background = element_blank())
 
 ## Heatmap ##
 
 library(pheatmap)
 library(dplyr)
-Counts <- read.csv("PRJNA435914_Korean_updown_Visualization.csv", header = TRUE, row.names = 1)
-factors <- read.csv("PRJNA435914_Korean.csv", header = TRUE, row.names = 1)
+Counts <- read.csv("Data_updown_Visualization.csv", header = TRUE, row.names = 1)
+factors <- read.csv("Data.csv", header = TRUE, row.names = 1)
 factorsDS <- dplyr::select(factors, sex, Tissue)
 factorsDS$sex <- factor(factorsDS$sex, levels = c("male", "female"))
 SexCol <- c("darkorchid", "darkorange")
@@ -144,7 +169,7 @@ BiocManager::install(organism, character.only = TRUE)
 library(organism, character.only = TRUE)
 
 ##Data##
-df = read.csv("TCGA_STAD_UpandDownwithsymbol", header=TRUE)
+df = read.csv("Data_UpandDownwithsymbol", header=TRUE)
 original_gene_list <- df$log2FoldChange
 names(original_gene_list) <- df$hgnc_symbol
 gene_list<-na.omit(original_gene_list)
